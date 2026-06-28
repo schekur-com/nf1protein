@@ -9,14 +9,30 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
+from simulations.config import SimulationConfig, DEFAULT_SIMULATION_CONFIG
+
 _CACHED_THETA = None
 _LANGEVIN_CACHE = {}
 
 def run_langevin_simulation_pipeline(
-    target_equilibrium=0.5,
     omega_mut=1.0,
     haddock_score=0.0,
+    config=None,
     save_plot=False):
+    """
+    Solve Langevin equation with colored noise and occupancy gating.
+    
+    Args:
+        omega_mut: Mutation parameter
+        haddock_score: Binding affinity perturbation
+        config: SimulationConfig (uses default if None)
+        save_plot: Whether to save visualization
+        
+    Returns:
+        dict with 'trajectory', 'descent_metric', etc.
+    """
+    if config is None:
+        config = DEFAULT_SIMULATION_CONFIG
 
     print(
         "[PIPELINE]",
@@ -57,41 +73,41 @@ def run_langevin_simulation_pipeline(
             else:
 
                 print("[!] Klasörde .cif dosyası bulunamadı.")
-                _CACHED_THETA = 0.65
+                _CACHED_THETA = config.theta_native
 
         theta_native = _CACHED_THETA
 
     except Exception as e:
 
         print(f"[!] Köprü bağlantısı kurulamadı ({e})")
-        theta_native = 0.65
+        theta_native = config.theta_native
 
     # 1. Zaman ve Alan Parametreleri
-    T = 50.0
-    dt = 0.01
+    T = config.total_time
+    dt = config.dt
     N = int(T / dt)
     t = np.linspace(0, T, N)
-    A_effector = 10.0
+    A_effector = config.A_effector
 
     # 2. Biyofiziksel Manzara Parametreleri (Rugged Landscape)
     # (A) alpha scaling fix - use tanh for smoother scaling
-    alpha = 1.2 * np.tanh(omega_mut)
+    alpha = config.alpha_scale * np.tanh(omega_mut)
 
     beta = 2.0 * np.log1p(abs(haddock_score))
 
-    c1, k1 = 0.25, 12.0
-    c2, k2 = 0.18, 25.0
+    c1, k1 = config.c1, config.k1
+    c2, k2 = config.c2, config.k2
 
     # 3. Gelişmiş Ornstein-Uhlenbeck Renkli Gürültü Parametreleri (Colored Noise)
-    tau_memory = 0.8 
-    sigma_noise = 0.25 
+    tau_memory = config.tau_memory
+    sigma_noise = config.sigma_noise
     eta = np.zeros(N) 
 
     # 4. Olasılıksal Bağlanma Kinetiği (Probabilistic Occupancy Gating)    
     A_redirector_dynamic = np.zeros(N)
     is_bound = True
-    k_on = 0.04 
-    k_off = 0.02 
+    k_on = config.k_on
+    k_off = config.k_off 
 
     violations = 0
     descent_speed_accumulator = 0.0
@@ -109,7 +125,7 @@ def run_langevin_simulation_pipeline(
     theta_rugged = np.zeros(N)
     theta_rugged[0] = theta_native
     # (B) equilibrium drift fix - sync target with native
-    target_equilibrium = theta_native
+    target_equilibrium = theta_native  # Uses structural baseline
     
     for i in range(1, N):
         curr_theta = theta_rugged[i-1]
@@ -127,17 +143,17 @@ def run_langevin_simulation_pipeline(
         total_gradient = (base_grad + rugged_grad) / (1.0 + np.abs(base_grad) + np.abs(rugged_grad))
 
         # (D) Langevin step noise fix - adaptive noise scaling
-        noise_scale = 0.6 + 0.4 * omega_mut
+        noise_scale = config.noise_base + config.noise_omega_factor * omega_mut
         dtheta = - total_gradient * dt + noise_scale * eta[i] * np.sqrt(dt)
         theta_rugged[i] = curr_theta + dtheta
         
         # (E) violation logic fix - adaptive threshold
-        adaptive_eps = 0.25 + 0.15 * omega_mut
+        adaptive_eps = config.violation_base + config.violation_omega_factor * omega_mut
         if abs(theta_rugged[i] - target_equilibrium) > adaptive_eps:
             violations += 1
         descent_speed_accumulator += -total_gradient
 
-    theta_rugged = np.clip(theta_rugged, 0.01, 0.99)
+    theta_rugged = np.clip(theta_rugged, config.theta_min, config.theta_max)
     phi_rugged = A_effector * (1.0 - theta_rugged) / (1 + A_redirector_dynamic)
 
     # 6. Görselleştirme
@@ -201,7 +217,9 @@ class ColoredNoiseLangevinModel:
     def __new__(cls):
         # Pipeline'ı tetikler ve GA'nın beklediği sözlük (dict) çıktısını döndürür
         return run_langevin_simulation_pipeline(
-            target_equilibrium=-1.8,
+            omega_mut=1.0,
+            haddock_score=0.0,
+            config=DEFAULT_SIMULATION_CONFIG,
             save_plot=True
         )
 
@@ -210,11 +228,25 @@ class ColoredNoiseLangevinModel:
 # =====================================================================
 
 def solve_sde(*args, **kwargs):
-
+    """
+    Backward-compatible wrapper for run_langevin_simulation_pipeline.
+    
+    Args:
+        omega_mut: Mutation parameter
+        haddock_score: Binding affinity perturbation
+        config: SimulationConfig (optional)
+        
+    Returns:
+        tuple: (trajectory, descent_metric)
+    """
     global _LANGEVIN_CACHE
 
     omega_mut = kwargs.get("omega_mut", 1.0)
     haddock_score = kwargs.get("haddock_score", 0.0)
+    config = kwargs.get("config", None)
+
+    if config is None:
+        config = DEFAULT_SIMULATION_CONFIG
 
     key = (
         round(float(omega_mut), 3),
@@ -231,9 +263,9 @@ def solve_sde(*args, **kwargs):
     )
 
     result = run_langevin_simulation_pipeline(
-        target_equilibrium=0.5,
         omega_mut=omega_mut,
         haddock_score=haddock_score,
+        config=config,
         save_plot=False
     )
 
@@ -241,7 +273,7 @@ def solve_sde(*args, **kwargs):
 
     # (G) homeostasis window fix - check last 200 timesteps
     window = trajectory[-200:]
-    target_eq = 0.5
+    target_eq = config.homeostasis_target
     homeostasis_metric = np.mean(np.abs(window - target_eq))
 
     # (F) descent sign bug fix - keep original sign
