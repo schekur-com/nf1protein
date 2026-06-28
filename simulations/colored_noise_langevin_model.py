@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 
 from simulations.config import SimulationConfig, DEFAULT_SIMULATION_CONFIG
 from simulations import random as sim_random
+from simulations.result import SimulationResult
 
 _CACHED_THETA = None
 _LANGEVIN_CACHE = {}
@@ -202,11 +203,16 @@ def run_langevin_simulation_pipeline(
         "violations=", violations   
     )
 
-    return {
-        "trajectory": theta_rugged,
-        "violations": violations,
-        "descent_speed": descent_speed_accumulator / N
-    }
+    return SimulationResult(
+        trajectory=theta_rugged,
+        violations=violations,
+        descent_speed=descent_speed_accumulator / N,
+        metadata={
+            "omega_mut": omega_mut,
+            "haddock_score": haddock_score,
+            "theta_native": theta_native,
+        }
+    )
 
 # =====================================================================
 # GENETİK ALGORİTMA KÖPRÜ BAĞLANTISI (OBJECT INTERFACE WRAPPER)
