@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from simulations.config import SimulationConfig, DEFAULT_SIMULATION_CONFIG
+from simulations import random as sim_random
 
 _CACHED_THETA = None
 _LANGEVIN_CACHE = {}
@@ -114,10 +115,10 @@ def run_langevin_simulation_pipeline(
 
     for i in range(N):
         if is_bound:
-            if np.random.rand() < k_off * dt: 
+            if sim_random.random() < k_off * dt: 
                 is_bound = False
         else:
-            if np.random.rand() < k_on * dt: 
+            if sim_random.random() < k_on * dt: 
                 is_bound = True
         A_redirector_dynamic[i] = 1.0 if is_bound else 0.0
 
@@ -132,7 +133,7 @@ def run_langevin_simulation_pipeline(
         curr_A_red = A_redirector_dynamic[i-1]
 
         # Ornstein-Uhlenbeck Renkli Gürültü Adımı (Hafıza Güncellemesi)
-        dW = np.random.normal(0, np.sqrt(dt))
+        dW = sim_random.normal(0, np.sqrt(dt))
         deta = -(1.0 / tau_memory) * eta[i-1] * dt + (sigma_noise / tau_memory) * dW
         eta[i] = eta[i-1] + deta
 

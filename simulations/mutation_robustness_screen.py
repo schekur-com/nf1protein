@@ -6,6 +6,7 @@ DEBUG = True
 
 from simulations.colored_noise_langevin_model import solve_sde
 from simulations.config import SimulationConfig, DEFAULT_SIMULATION_CONFIG
+from simulations import random as sim_random
 from bridge_models.evidence_weighted_calibration import (
     load_haddock_score_from_json
 )
@@ -98,7 +99,7 @@ def _sample_mutation_parameters(mutation_meta, iterations):
     sampled_omegas = mutation_meta["omega_prior"].rvs(iterations)
     
     if mutation_meta["haddock_std"] > 0:
-        sampled_scores = np.random.normal(
+        sampled_scores = sim_random.normal(
             loc=mutation_meta["haddock_score"],
             scale=mutation_meta["haddock_std"],
             size=iterations
