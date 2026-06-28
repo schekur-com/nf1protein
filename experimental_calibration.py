@@ -71,7 +71,7 @@ def run_calibrated_pipeline():
     # Error bar integration for high scientific transparency
     plt.errorbar(deneysel_dozlar, pseudo_experimental_signals, yerr=experimental_errors, 
                  fmt='o', color='#d62728', elinewidth=2, capsize=4, ms=6, zorder=5,
-                 label='Heuristic Pseudo-Experimental Data ($\pm$ SD)')
+                 label=r'Heuristic Pseudo-Experimental Data ($\pm$ SD)')
     
     # Annotations
     plt.axvline(x=ec50_proxy, color='gray', linestyle=':', alpha=0.8,
